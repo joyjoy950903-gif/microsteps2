@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微步目標 MicroSteps - 極低認知，極高專注 (Supabase 雲端版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', "SF Pro Display", "PingFang TC", "Taipei Sans TC", sans-serif;
+            background-color: #0D1117;
+            color: #F0F6FC;
+            -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
+        }
+
+        /* 呼吸燈外陰影 */
+        .active-glow {
+            box-shadow: 0 0 15px -3px rgba(52, 152, 219, 0.3), 0 0 6px -2px rgba(52, 152, 219, 0.2);
+            border: 1px solid rgba(52, 152, 219, 0.4);
+        }
+
+        /* 鎖定目標灰階降噪 */
+        .locked-card {
+            opacity: 0.5;
+            filter: grayscale(80%);
+            transition: all 0.3s ease;
+        }
+        .locked-card:active {
+            transform: scale(0.98);
+        }
+
+        /* 自訂微震動/搖晃動畫 */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+        .shake-anim {
+            animation: shake 0.2s ease-in-out 2;
+        }
+
+        /* 毛玻璃模糊效果 */
+        .glass-panel {
+            background: rgba(22, 27, 34, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(240, 246, 252, 0.05);
+        }
+
+        /* 隱藏滾動條 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 環狀進度條動畫 */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.35s;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        deepVoid: '#0D1117',
+                        matteSlate: '#161B22',
+                        focusCyan: '#3498DB',
+                        vitalityGreen: '#2ECC71',
+                        dimGray: '#8B949E',
+                        pureWhite: '#F0F6FC',
+                        mutedSilver: '#8B949E'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex flex-col min-h-screen justify-between max-w-md mx-auto shadow-2xl relative border-x border-gray-800">
+
+    <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 glass-panel px-4 py-3 rounded-full text-sm text-center text-pureWhite flex items-center gap-2 shadow-lg transition-all duration-300 opacity-0 pointer-events-none">
+        <i data-lucide="info" class="w-4 h-4 text-focusCyan" id="toast-icon"></i>
+        <span id="toast-text">提示訊息</span>
+    </div>
+
+    <!-- 封存/放棄確認彈窗 -->
+    <div id="archive-modal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6 hidden">
+        <div class="glass-panel w-full max-w-sm rounded-3xl p-6 text-center border border-red-500/20">
+            <div class="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-pureWhite mb-2">確認要放棄/刪除目標？</h3>
+            <p class="text-xs text-mutedSilver mb-6 leading-relaxed">
+                放棄此目標後，它將從雲端庫中移除。這是一次對專注力的考驗，您確定要切換軌道嗎？
+            </p>
+            <div class="flex gap-3">
+                <button onclick="closeArchiveModal()" class="flex-1 py-3 rounded-xl bg-matteSlate text-sm text-pureWhite border border-gray-700 hover:bg-gray-800">
+                    繼續專注
+                </button>
+                <button onclick="confirmArchiveGoal()" class="flex-1 py-3 rounded-xl bg-red-500/20 text-red-400 text-sm border border-red-500/30 hover:bg-red-500/30">
+                    確認放棄
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <header class="px-6 pt-6 pb-4 flex justify-between items-center border-b border-gray-900 sticky top-0 bg-deepVoid/95 backdrop-blur-md z-40">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-focusCyan to-vitalityGreen flex items-center justify-center shadow-md">
+                <i data-lucide="target" class="w-4 h-4 text-deepVoid"></i>
+            </div>
+            <span class="font-bold text-lg tracking-wider text-pureWhite">MicroSteps</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-1 bg-matteSlate px-2.5 py-1 rounded-full border border-gray-800">
+                <span class="text-xs font-semibold text-vitalityGreen" id="streak-header-count">🔥 -- 天</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 px-6 py-4 overflow-y-auto no-scrollbar pb-24">
+        
+        <section id="page-goals" class="space-y-6">
+            <div>
+                <h2 class="text-xs font-bold text-mutedSilver tracking-widest uppercase mb-3 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-focusCyan animate-pulse"></span>
+                    🎯 運行中目標 (ACTIVE)
+                </h2>
+                <div id="active-goal-container">
+                    <p class="text-xs text-dimGray italic">雲端連線中...</p>
+                </div>
+            </div>
+
+            <div class="pt-2">
+                <h2 class="text-xs font-bold text-mutedSilver tracking-widest uppercase mb-3 flex items-center gap-1">
+                    <i data-lucide="lock" class="w-3.5 h-3.5 text-dimGray"></i>
+                    🔒 隊列中目標 (QUEUE)
+                </h2>
+                <div class="space-y-3" id="queued-goals-container"></div>
+            </div>
+
+            <button onclick="openAddGoalSheet()" class="w-full py-4 rounded-2xl bg-matteSlate border border-dashed border-gray-800 hover:border-focusCyan/40 flex items-center justify-center gap-2 text-sm text-mutedSilver hover:text-focusCyan transition-all">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                新增自訂目標
+            </button>
+        </section>
+
+        <section id="page-task" class="hidden space-y-6 flex flex-col justify-between min-h-[55vh]">
+            <div class="text-center space-y-1">
+                <div class="flex items-center justify-center gap-1.5 text-xs text-focusCyan font-medium" id="task-goal-title">
+                    載入中...
+                </div>
+                <div class="text-3xl font-black text-pureWhite tracking-wide pt-2" id="task-day-counter">
+                    DAY 01 / 30
+                </div>
+                <div class="w-32 h-1 bg-gray-800 mx-auto rounded-full overflow-hidden mt-1">
+                    <div class="h-full bg-focusCyan transition-all duration-500" id="task-day-progressbar" style="width: 3%;"></div>
+                </div>
+            </div>
+
+            <div class="py-6 flex flex-col justify-center items-center text-center space-y-6">
+                <div class="text-xs text-mutedSilver uppercase tracking-widest font-semibold flex items-center gap-1">
+                    <i data-lucide="play" class="w-3 h-3 text-focusCyan"></i> 今日核心微任務
+                </div>
+                
+                <h1 class="text-2xl font-bold text-pureWhite px-4 leading-relaxed max-w-sm" id="current-task-title">
+                    載入中...
+                </h1>
+
+                <div class="glass-panel border border-focusCyan/10 rounded-2xl px-5 py-4 max-w-sm text-left flex gap-3">
+                    <span class="text-xl">💡</span>
+                    <div>
+                        <div class="text-xs font-bold text-focusCyan mb-0.5">完成後你將獲得的能力</div>
+                        <p class="text-xs text-mutedSilver leading-relaxed" id="current-task-reward">
+                            依據大腦極低負載原則，完成本日量化任務可有效強化神經元肌肉記憶。
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center space-y-4 pt-4">
+                <div class="relative w-28 h-28 flex items-center justify-center">
+                    <div id="btn-ring-glow" class="absolute inset-0 rounded-full border-2 border-dashed border-focusCyan/30 animate-spin" style="animation-duration: 8s;"></div>
+                    <svg class="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="44" stroke="rgba(46, 204, 113, 0.1)" stroke-width="6" fill="transparent" />
+                        <circle id="hold-progress-circle" cx="50" cy="50" r="44" stroke="#2ECC71" stroke-width="6" fill="transparent" stroke-dasharray="276.4" stroke-dashoffset="276.4" class="transition-all duration-75" />
+                    </svg>
+
+                    <button id="giant-checkbox-btn" 
+                            class="w-20 h-20 rounded-full bg-matteSlate border-2 border-focusCyan flex items-center justify-center transition-all duration-300 z-10 focus:outline-none shadow-lg active:scale-95"
+                            style="box-shadow: 0 0 15px rgba(52, 152, 219, 0.25);">
+                        <i id="btn-icon" data-lucide="check" class="w-8 h-8 text-focusCyan transition-all duration-300"></i>
+                    </button>
+                </div>
+
+                <div class="text-center">
+                    <p class="text-xs text-mutedSilver font-medium" id="hold-prompt-text">
+                        長按按鈕 1.5 秒確認今日微步達成
+                    </p>
+                    <p class="text-[10px] text-dimGray mt-1">
+                        ⚠️ 請誠實面對自己，確保已實際執行
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section id="page-analytics" class="hidden space-y-6">
+            <div class="glass-panel rounded-3xl p-5 flex items-center gap-6 border border-gray-800">
+                <div class="relative w-24 h-24 flex items-center justify-center shrink-0">
+                    <svg class="w-full h-full" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="40" stroke="rgba(22, 27, 34, 1)" stroke-width="8" fill="transparent" />
+                        <circle id="analytics-progress-ring" cx="50" cy="50" r="40" stroke="url(#cyan-green-grad)" stroke-width="8" fill="transparent" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2" class="progress-ring__circle" />
+                        <defs>
+                            <linearGradient id="cyan-green-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#3498DB" />
+                                <stop offset="100%" stop-color="#2ECC71" />
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <span class="absolute text-base font-bold text-pureWhite" id="analytics-progress-text">0%</span>
+                </div>
+
+                <div class="space-y-1">
+                    <h3 class="text-sm font-semibold text-pureWhite">當前目標進度</h3>
+                    <p class="text-xs text-mutedSilver leading-relaxed" id="analytics-prompt-box">
+                        載入中...
+                    </p>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-xs font-bold text-mutedSilver tracking-widest uppercase mb-3 flex items-center gap-2">
+                    <i data-lucide="award" class="w-4 h-4 text-focusCyan"></i>
+                    🏆 已收藏之微步勳章 (榮譽牆)
+                </h3>
+                <div class="grid grid-cols-4 gap-3">
+                    <div class="glass-panel rounded-2xl p-3 text-center border border-vitalityGreen/20">
+                        <div class="text-2xl mb-1">🥇</div>
+                        <div class="text-[10px] font-bold text-pureWhite truncate">微步先鋒</div>
+                        <div class="text-[8px] text-vitalityGreen mt-0.5">已解鎖</div>
+                    </div>
+                    <div class="glass-panel rounded-2xl p-3 text-center opacity-40 grayscale">
+                        <div class="text-2xl mb-1">🔒</div>
+                        <div class="text-[10px] font-bold text-pureWhite truncate">十日連勝</div>
+                        <div class="text-[8px] text-dimGray mt-0.5">未解鎖</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="add-goal-sheet" class="fixed inset-x-0 bottom-0 max-w-md mx-auto bg-matteSlate rounded-t-[32px] border-t border-gray-800 z-50 transform translate-y-full transition-transform duration-300 p-6 shadow-2xl">
+        <div class="w-12 h-1.5 bg-gray-700 rounded-full mx-auto mb-6"></div>
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-pureWhite flex items-center gap-2">
+                <i data-lucide="plus-circle" class="text-focusCyan"></i>
+                新增自訂終極目標
+            </h3>
+            <button onclick="closeAddGoalSheet()" class="text-mutedSilver hover:text-pureWhite">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <form id="add-goal-form" onsubmit="createNewGoal(event)" class="space-y-5">
+            <div>
+                <label class="block text-xs text-mutedSilver font-semibold mb-2">你想達到的終極目標是？</label>
+                <input id="input-goal-title" type="text" placeholder="例如：能用日語點餐 / 學會寫 React 網頁" required
+                    class="w-full bg-[#0D1117] border border-gray-800 focus:border-focusCyan focus:outline-none rounded-xl px-4 py-3 text-sm text-pureWhite placeholder-dimGray">
+            </div>
+            <button id="btn-submit-goal" type="submit" class="w-full py-4 bg-gradient-to-r from-focusCyan to-[#2980B9] text-pureWhite font-bold text-sm rounded-xl shadow-lg shadow-focusCyan/20 transition-transform flex items-center justify-center gap-2">
+                <span>串接並生成雲端目標</span>
+            </button>
+        </form>
+    </div>
+
+    <nav class="fixed bottom-0 inset-x-0 max-w-md mx-auto bg-deepVoid/95 border-t border-gray-900 px-6 py-2 flex justify-around items-center z-40 backdrop-blur-md">
+        <button onclick="switchTab('goals')" id="tab-btn-goals" class="flex flex-col items-center gap-1 py-1 px-3 text-focusCyan transition-all">
+            <i data-lucide="layout-grid" class="w-5 h-5"></i>
+            <span class="text-[10px] font-semibold tracking-wide">目標管理</span>
+        </button>
+        <button onclick="switchTab('task')" id="tab-btn-task" class="flex flex-col items-center gap-1 py-1 px-3 text-mutedSilver transition-all relative">
+            <div class="relative">
+                <i data-lucide="compass" class="w-5 h-5"></i>
+                <span id="task-badge" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-focusCyan rounded-full border border-deepVoid animate-pulse hidden"></span>
+            </div>
+            <span class="text-[10px] font-semibold tracking-wide">目前任務</span>
+        </button>
+        <button onclick="switchTab('analytics')" id="tab-btn-analytics" class="flex flex-col items-center gap-1 py-1 px-3 text-mutedSilver transition-all">
+            <i data-lucide="bar-chart-2" class="w-5 h-5"></i>
+            <span class="text-[10px] font-semibold tracking-wide">成果看板</span>
+        </button>
+    </nav>
+
+    <div id="backdrop" class="fixed inset-0 bg-black/60 z-40 hidden" onclick="closeAddGoalSheet()"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://ltcywtnyrtforqzwexwa.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_gAwXZWK3OCYbLItVeOl7Bg_6TmWjsuG';
+        
+        let supabaseClient = null;
+        if (SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+
+        let dbGoals = [];
+        let goalIdToArchive = null; // 追蹤要刪除的目標 ID
+
+        window.onload = function() {
+            lucide.createIcons();
+            if (!supabaseClient) {
+                showToast("請在原始碼中填入你的 Supabase 網址與金鑰！", "shield-alert");
+                return;
+            }
+            fetchGoalsFromCloud();
+            initHoldButton();
+        }
+
+        async function fetchGoalsFromCloud() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('goals')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+
+                if (error) throw error;
+
+                dbGoals = data || [];
+                renderGoals();
+                renderAnalytics();
+            } catch (err) {
+                console.error("讀取 Supabase 失敗:", err.message);
+                showToast("雲端讀取失敗：" + err.message, "alert-circle");
+            }
+        }
+
+        // ==================== 頁面渲染邏輯 ====================
+        function renderGoals() {
+            const activeContainer = document.getElementById('active-goal-container');
+            const queuedContainer = document.getElementById('queued-goals-container');
+            
+            activeContainer.innerHTML = '';
+            queuedContainer.innerHTML = '';
+
+            // 直接拿陣列第 0 筆做為主要運行目標
+            let currentActive = dbGoals.length > 0 ? dbGoals[0] : null;
+
+            if (currentActive) {
+                document.getElementById('task-badge').classList.remove('hidden');
+                const totalSteps = 30;
+                const progressPercent = Math.round((currentActive.completed_steps / totalSteps) * 100);
+                
+                activeContainer.innerHTML = `
+                    <div class="glass-panel rounded-3xl p-5 active-glow relative overflow-hidden">
+                        <div class="absolute top-0 right-0 bg-focusCyan/10 text-focusCyan text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase">
+                            ACTIVE
+                        </div>
+                        <div class="flex items-start gap-3 mt-1">
+                            <span class="text-xl">🚀</span>
+                            <div class="space-y-1 flex-1">
+                                <h3 class="text-base font-bold text-pureWhite leading-snug">${currentActive.title}</h3>
+                                <p class="text-xs text-mutedSilver">今日狀態：${currentActive.today_completed ? '🎉 本日已安全達成！' : '🔥 待執行微步任務'}</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 space-y-1.5">
+                            <div class="flex justify-between text-xs font-semibold">
+                                <span class="text-focusCyan">進度：${progressPercent}%</span>
+                                <span class="text-mutedSilver">${currentActive.completed_steps} / ${totalSteps} 步</span>
+                            </div>
+                            <div class="w-full h-2 bg-[#0D1117] rounded-full overflow-hidden">
+                                <div class="h-full bg-gradient-to-r from-focusCyan to-vitalityGreen transition-all duration-500" style="width: ${progressPercent}%;"></div>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-800/60 flex gap-3">
+                            <button onclick="switchTab('task')" class="flex-1 py-2.5 rounded-xl bg-focusCyan text-deepVoid font-bold text-xs flex items-center justify-center gap-1">
+                                <i data-lucide="play" class="w-3.5 h-3.5 fill-deepVoid"></i> 進入今日任務
+                            </button>
+                            <button onclick="openArchiveModal('${currentActive.id}')" class="px-3 py-2.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 text-xs">
+                                放棄
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('streak-header-count').textContent = `🔥 ${currentActive.completed_steps} 天`;
+                updateTaskScreen(currentActive);
+            } else {
+                document.getElementById('task-badge').classList.add('hidden');
+                document.getElementById('streak-header-count').textContent = `🔥 0 天`;
+                activeContainer.innerHTML = `
+                    <div class="glass-panel rounded-3xl p-6 text-center border border-dashed border-gray-800">
+                        <i data-lucide="target" class="w-8 h-8 text-dimGray mx-auto mb-2"></i>
+                        <p class="text-sm text-pureWhite font-medium">雲端目前沒有目標，請點擊下方建立！</p>
+                    </div>
+                `;
+                document.getElementById('task-goal-title').innerHTML = `暫無目標`;
+                document.getElementById('current-task-title').textContent = `請先建立目標`;
+            }
+
+            // 渲染隊列目標
+            dbGoals.forEach((goal, idx) => {
+                if (currentActive && goal.id === currentActive.id) return;
+                
+                const cardId = `queued-card-${goal.id}`;
+                queuedContainer.innerHTML += `
+                    <div id="${cardId}" onclick="triggerLockShake('${cardId}')" class="locked-card glass-panel rounded-2xl p-4 flex items-center justify-between cursor-pointer">
+                        <div class="flex items-center gap-3">
+                            <span class="text-base">🔒</span>
+                            <h4 class="text-sm font-semibold text-pureWhite">${goal.title}</h4>
+                        </div>
+                        <div class="text-dimGray"><i data-lucide="lock" class="w-4 h-4"></i></div>
+                    </div>
+                `;
+            });
+
+            lucide.createIcons();
+        }
+
+        function triggerLockShake(elementId) {
+            const card = document.getElementById(elementId);
+            if(!card) return;
+            card.classList.add('shake-anim', 'border-red-500/20');
+            setTimeout(() => card.classList.remove('shake-anim', 'border-red-500/20'), 400);
+            showToast("解鎖失敗！請先完成或封存當前運行中的目標。", "lock");
+        }
+
+        // ==================== 頁面 2: 目前任務頁面更新 ====================
+        function updateTaskScreen(activeGoal) {
+            document.getElementById('task-goal-title').innerHTML = `<i data-lucide="target" class="w-3.5 h-3.5"></i> 目標：${activeGoal.title}`;
+            
+            // 🛠️ 修正點：根據今日是否完成，精準鎖定當前天數
+            // 如果今天已完成，天數就等於已完成步數；如果未完成，則是已完成步數 + 1
+            const currentDay = activeGoal.today_completed 
+                ? Math.max(1, activeGoal.completed_steps) 
+                : activeGoal.completed_steps + 1;
+
+            document.getElementById('task-day-counter').textContent = `DAY ${currentDay.toString().padStart(2, '0')} / 30`;
+            document.getElementById('task-day-progressbar').style.width = `${Math.round((currentDay/30)*100)}%`;
+            
+            // 🛠️ 修正點：先處理已完成的狀態顯示，確保文字不會被防呆字串蓋掉
+            if (activeGoal.today_completed) {
+                document.getElementById('current-task-title').textContent = `🎉 今日核心任務已安全達成！`;
+            } else {
+                // 從 activeGoal.tasks 陣列中撈出對應天數的任務
+                if (activeGoal.tasks && activeGoal.tasks[currentDay - 1]) {
+                    document.getElementById('current-task-title').textContent = `「 ${activeGoal.tasks[currentDay - 1]} 」`;
+                } else {
+                    // 完全防呆機制
+                    document.getElementById('current-task-title').textContent = `「 執行第 ${currentDay} 次量化核心實作與查錯 」`;
+                }
+            }
+
+            const btn = document.getElementById('giant-checkbox-btn');
+            const icon = document.getElementById('btn-icon');
+            const ring = document.getElementById('btn-ring-glow');
+            const promptText = document.getElementById('hold-prompt-text');
+
+            if (activeGoal.today_completed) {
+                btn.style.borderColor = '#2ECC71';
+                btn.style.boxShadow = '0 0 20px rgba(46, 204, 113, 0.4)';
+                icon.setAttribute('data-lucide', 'check-check');
+                icon.style.color = '#2ECC71';
+                if(ring) ring.classList.add('hidden');
+                promptText.innerHTML = `<span class="text-vitalityGreen">🎉 數據已同步至雲端！</span>`;
+                btn.disabled = true;
+            } else {
+                btn.style.borderColor = '#3498DB';
+                btn.style.boxShadow = '0 0 15px rgba(52, 152, 219, 0.25)';
+                icon.setAttribute('data-lucide', 'check');
+                icon.style.color = '#3498DB';
+                if(ring) ring.classList.remove('hidden');
+                promptText.textContent = "長按按鈕 1.5 秒確認今日微步達成";
+                btn.disabled = false;
+            }
+            lucide.createIcons();
+        }
+
+        // ==================== 長按打卡邏輯 ====================
+        let holdTimer;
+        let isHolding = false;
+
+        function initHoldButton() {
+            const btn = document.getElementById('giant-checkbox-btn');
+            const progressCircle = document.getElementById('hold-progress-circle');
+
+            function startHold(e) {
+                if (dbGoals.length === 0 || dbGoals[0].today_completed) return;
+
+                e.preventDefault();
+                isHolding = true;
+                btn.style.transform = 'scale(0.9)';
+                progressCircle.style.transition = 'stroke-dashoffset 1.5s linear';
+                progressCircle.style.strokeDashoffset = '0';
+
+                holdTimer = setTimeout(() => {
+                    updateStreakToSupabase(dbGoals[0]);
+                }, 1500);
+            }
+
+            function cancelHold() {
+                if (!isHolding) return;
+                isHolding = false;
+                clearTimeout(holdTimer);
+                btn.style.transform = 'scale(1)';
+                progressCircle.style.transition = 'stroke-dashoffset 0.3s ease-out';
+                progressCircle.style.strokeDashoffset = '276.4';
+            }
+
+            btn.addEventListener('mousedown', startHold);
+            btn.addEventListener('mouseup', cancelHold);
+            btn.addEventListener('mouseleave', cancelHold);
+            btn.addEventListener('touchstart', startHold);
+            btn.addEventListener('touchend', cancelHold);
+        }
+
+        async function updateStreakToSupabase(activeGoal) {
+            isHolding = false;
+            const nextStepCount = activeGoal.completed_steps + 1;
+
+            try {
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .update({ 
+                        completed_steps: nextStepCount, 
+                        today_completed: true 
+                    })
+                    .eq('id', activeGoal.id);
+
+                if (error) throw error;
+
+                confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, colors: ['#3498DB', '#2ECC71'] });
+                showToast("打卡成功！進度已安全儲存至雲端。", "cloud-lightning");
+
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("更新雲端失敗：" + err.message, "alert-octagon");
+            }
+
+            document.getElementById('hold-progress-circle').style.strokeDashoffset = '276.4';
+        }
+
+        // ==================== 🤖 對接真實 Gemini 2.5 API 規劃 30 天任務 ====================
+        async function callGeminiAPI(goalTitle) {
+            const apiKey = ""; // 使用環境提供之運行時金鑰
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            
+            // 強大的系統提示詞：設定大腦微型量化、5分鐘低負載與繁體中文
+            const systemPrompt = `你是一位神經科學與行為習慣學專家。請針對使用者的終極目標，客製化設計一套完美的「30天超低認知負荷微步計劃（MicroSteps）」。
+大腦天生抗拒高負載、需要強烈即時反饋。請設計30個任務，各任務必須滿足以下條件：
+1. 100% 可以在 5 到 10 分鐘內輕鬆閉眼完成。
+2. 語氣格式必須是「具體動作動詞 + 微型量化指標」。例如目標為學會日語點餐，第一天任務可以是『在紙上寫下日文單字「這（これ）」並大聲念出 3 遍』，而不是籠統的『學習基礎點餐單字』。
+3. 難度曲線極度平緩，第1天極其簡單，並在30天中慢慢堆疊成就感。
+請輸出為符合以下 JSON 結構的繁體中文資料，不要包含 markdown 格式，僅返回純 JSON。`;
+
+            const payload = {
+                contents: [{ parts: [{ text: `終極目標是：${goalTitle}` }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            tasks: {
+                                type: "ARRAY",
+                                items: { type: "STRING" },
+                                description: "Exactly 30 customized micro-tasks for the given goal, in Traditional Chinese (zh-TW)"
+                            }
+                        },
+                        required: ["tasks"]
+                    }
+                }
+            };
+
+            // 實作指數型退避重試
+            let delay = 1000;
+            for (let retry = 0; retry < 5; retry++) {
+                try {
+                    const response = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) throw new Error(`HTTP status: ${response.status}`);
+                    
+                    const result = await response.json();
+                    const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (textResponse) {
+                        const parsed = JSON.parse(textResponse);
+                        if (parsed && Array.isArray(parsed.tasks) && parsed.tasks.length >= 30) {
+                            return parsed.tasks.slice(0, 30);
+                        }
+                    }
+                } catch (e) {
+                    if (retry === 4) throw e; // 最後一次重試失敗，丟出錯誤
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+            throw new Error("AI 規劃逾時，將改為啟用本地智慧範本。");
+        }
+
+        // ==================== 🚀 新增自訂終極目標 ====================
+        async function createNewGoal(event) {
+            event.preventDefault();
+            const titleInput = document.getElementById('input-goal-title');
+            const submitBtn = document.getElementById('btn-submit-goal');
+            const title = titleInput.value.trim();
+            if (!title) return;
+
+            // 變更按鈕載入狀態、顯示載入提示
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-75');
+            submitBtn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> <span>AI 正在規劃 30 天微步任務...</span>`;
+            lucide.createIcons();
+            showToast("Gemini AI 正在規劃您的 30 天超低負載微任務...", "loader");
+
+            let aiGeneratedTasks = [];
+            try {
+                // 呼叫真實 Gemini 2.5 API
+                aiGeneratedTasks = await callGeminiAPI(title);
+            } catch (err) {
+                console.warn("AI 規劃失敗，改用預設模板：", err.message);
+                // 💡 優雅無縫降級：AI 失敗時，自動使用高质量的備用模版
+                aiGeneratedTasks = Array.from({ length: 30 }, (_, i) => {
+                    return `針對「${title}」：花 5 分鐘執行第 ${i + 1} 階段的具體實作與糾錯`;
+                });
+            }
+
+            try {
+                // 寫入 Supabase 資料庫
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .insert([
+                        { 
+                            title: title, 
+                            completed_steps: 0, 
+                            today_completed: false,
+                            tasks: aiGeneratedTasks // 將 30 天任務存入 JSONB 欄位中
+                        }
+                    ]);
+
+                if (error) throw error;
+
+                titleInput.value = '';
+                closeAddGoalSheet();
+                showToast(`新目標與 AI 微步計畫已成功建立！`, "check-circle");
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("上傳失敗：" + err.message, "alert-octagon");
+            } finally {
+                // 還原按鈕狀態
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-75');
+                submitBtn.innerHTML = `<span>串接並生成雲端目標</span>`;
+                lucide.createIcons();
+            }
+        }
+
+        // ==================== 頁面 3: 看板邏輯 ====================
+        function renderAnalytics() {
+            const activeGoal = dbGoals.length > 0 ? dbGoals[0] : null;
+            const ring = document.getElementById('analytics-progress-ring');
+            const txt = document.getElementById('analytics-progress-text');
+            const prompt = document.getElementById('analytics-prompt-box');
+
+            if (activeGoal) {
+                const pct = Math.min(Math.round((activeGoal.completed_steps / 30) * 100), 100);
+                txt.textContent = `${pct}%`;
+                ring.style.strokeDashoffset = 251.2 - (pct / 100) * 251.2;
+                prompt.textContent = `在雲端資料庫的監督下，你已經完成了 30 步中的 ${activeGoal.completed_steps} 步任務。繼續保持！`;
+            } else {
+                txt.textContent = `0%`;
+                ring.style.strokeDashoffset = 251.2;
+                prompt.textContent = `尚無目標，快前往目標管理頁面建立新目標吧。`;
+            }
+        }
+
+        // ==================== 彈窗與分頁切換邏輯 ====================
+        function openArchiveModal(goalId) {
+            goalIdToArchive = goalId;
+            document.getElementById('archive-modal').classList.remove('hidden');
+        }
+
+        function closeArchiveModal() {
+            document.getElementById('archive-modal').classList.add('hidden');
+            goalIdToArchive = null;
+        }
+
+        // 雲端 DELETE 串接
+        async function confirmArchiveGoal() {
+            if (!goalIdToArchive) return;
+            try {
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .delete()
+                    .eq('id', goalIdToArchive);
+
+                if (error) throw error;
+
+                showToast("目標已成功從雲端庫中移除", "trash-2");
+                closeArchiveModal();
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("刪除失敗：" + err.message, "alert-octagon");
+            }
+        }
+
+        function switchTab(tabId) {
+            document.getElementById('page-goals').classList.add('hidden');
+            document.getElementById('page-task').classList.add('hidden');
+            document.getElementById('page-analytics').classList.add('hidden');
+            document.getElementById(`page-${tabId}`).classList.remove('hidden');
+
+            ['goals', 'task', 'analytics'].forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (t === tabId) { btn.classList.add('text-focusCyan'); btn.classList.remove('text-mutedSilver'); }
+                else { btn.classList.remove('text-focusCyan'); btn.classList.add('text-mutedSilver'); }
+            });
+            if (tabId === 'analytics') renderAnalytics();
+        }
+
+        function showToast(text, iconName = 'info') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-text').textContent = text;
+            document.getElementById('toast-icon').setAttribute('data-lucide', iconName);
+            lucide.createIcons();
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            toast.classList.add('opacity-100');
+            setTimeout(() => { toast.classList.add('opacity-0', 'pointer-events-none'); toast.classList.remove('opacity-100'); }, 3500);
+        }
+
+        function openAddGoalSheet() { document.getElementById('backdrop').classList.remove('hidden'); document.getElementById('add-goal-sheet').classList.remove('translate-y-full'); }
+        function closeAddGoalSheet() { document.getElementById('backdrop').classList.add('hidden'); document.getElementById('add-goal-sheet').classList.add('translate-y-full'); }
+    </script>
+</body>
+</html>
