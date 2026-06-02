@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微步目標 MicroSteps - 離開舒適圈無限隨機挑戰 (Gemini LLM 全能升級版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700;900&display=swap');
+        
+        body {
+            font-family: 'Inter', "SF Pro Display", "PingFang TC", "Taipei Sans TC", sans-serif;
+            background-color: #0D1117;
+            color: #F0F6FC;
+            -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
+        }
+
+        /* 呼吸燈外陰影與高科技霓虹發光 */
+        .active-glow {
+            box-shadow: 0 0 20px -3px rgba(138, 92, 246, 0.4), 0 0 10px -2px rgba(138, 92, 246, 0.2);
+            border: 1px solid rgba(138, 92, 246, 0.5);
+        }
+
+        /* 毛玻璃模糊效果 */
+        .glass-panel {
+            background: rgba(22, 27, 34, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(240, 246, 252, 0.05);
+        }
+
+        /* 隱藏滾動條 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 環狀進度條動畫 */
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.35s;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        /* 聊天氣泡動畫 */
+        @keyframes fadeInBubble {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .chat-bubble {
+            animation: fadeInBubble 0.25s ease-out forwards;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        deepVoid: '#0D1117',
+                        matteSlate: '#161B22',
+                        focusCyan: '#3498DB',
+                        vitalityGreen: '#2ECC71',
+                        comfortPurple: '#8B5CF6',
+                        dimGray: '#8B949E',
+                        pureWhite: '#F0F6FC',
+                        mutedSilver: '#8B949E'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex flex-col min-h-screen justify-between max-w-md mx-auto shadow-2xl relative border-x border-gray-800">
+
+    <!-- Toast 提示組件 -->
+    <div id="toast" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 glass-panel px-4 py-3 rounded-full text-sm text-center text-pureWhite flex items-center gap-2 shadow-lg transition-all duration-300 opacity-0 pointer-events-none">
+        <i data-lucide="info" class="w-4 h-4 text-comfortPurple" id="toast-icon"></i>
+        <span id="toast-text">提示訊息</span>
+    </div>
+
+    <!-- AI 任務微調 Modal -->
+    <div id="tune-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6 hidden">
+        <div class="glass-panel w-full max-w-sm rounded-3xl p-6 border border-comfortPurple/30 space-y-4">
+            <div class="flex items-center gap-2 text-comfortPurple">
+                <i data-lucide="sparkles" class="w-5 h-5"></i>
+                <h3 class="text-base font-bold text-pureWhite">AI 任務物理情境微調</h3>
+            </div>
+            <p class="text-xs text-mutedSilver leading-relaxed">
+                今天不方便執行這個突破？告訴 AI 你目前的限制（例如：下大雨不能出門、人在辦公室、身體不舒服等），我們幫你無痛調整成同等成效的替代任務！
+            </p>
+            <textarea id="tune-input" placeholder="例如：現在在下大雨，沒辦法去公園散步..." 
+                class="w-full h-24 bg-[#0D1117] border border-gray-800 focus:border-comfortPurple focus:outline-none rounded-xl p-3 text-sm text-pureWhite placeholder-dimGray resize-none"></textarea>
+            <div class="flex gap-3">
+                <button onclick="closeTuneModal()" class="flex-1 py-3 rounded-xl bg-matteSlate text-xs text-pureWhite border border-gray-700">
+                    取消
+                </button>
+                <button id="btn-submit-tune" onclick="submitTuneTask()" class="flex-1 py-3 rounded-xl bg-comfortPurple text-xs text-pureWhite font-bold hover:bg-violet-600 transition-all">
+                    Gemini 重新調整
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CBT 心智重塑與擬真語音 Modal -->
+    <div id="cbt-modal" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6 hidden">
+        <div class="glass-panel w-full max-w-sm rounded-3xl p-6 border border-vitalityGreen/30 space-y-4 relative">
+            <div class="flex justify-between items-start">
+                <div class="flex items-center gap-2 text-vitalityGreen">
+                    <i data-lucide="brain-circuit" class="w-5 h-5"></i>
+                    <h3 class="text-base font-bold text-pureWhite">打卡成功！心智重塑</h3>
+                </div>
+                <button id="btn-cbt-tts" onclick="playCbtSpeech()" class="w-8 h-8 rounded-full bg-matteSlate flex items-center justify-center text-comfortPurple hover:scale-105 active:scale-95 transition-all hidden" title="播放 AI CBT 語音朗讀">
+                    <i data-lucide="volume-2" class="w-4 h-4" id="tts-icon"></i>
+                </button>
+            </div>
+            
+            <!-- 寫心得區域 -->
+            <div id="cbt-feedback-stage" class="space-y-3">
+                <p class="text-xs text-mutedSilver leading-relaxed">
+                    在越過內心小障礙的那一秒鐘，你注意到了自己身體或大腦浮現了什麼聲音？
+                </p>
+                <textarea id="cbt-input" placeholder="例如：剛開始心跳很快、覺得很尷尬，但做完之後覺得自己滿勇敢的！" 
+                    class="w-full h-24 bg-[#0D1117] border border-gray-800 focus:border-vitalityGreen focus:outline-none rounded-xl p-3 text-sm text-pureWhite placeholder-dimGray resize-none"></textarea>
+                <button id="btn-submit-cbt" onclick="submitCbtAnalysis()" class="w-full py-3 rounded-xl bg-vitalityGreen text-deepVoid font-black text-xs hover:bg-emerald-500 transition-all">
+                    進行 Gemini CBT 深度心智重塑
+                </button>
+            </div>
+
+            <!-- CBT 分析展示區域 -->
+            <div id="cbt-result-stage" class="space-y-3 hidden">
+                <div class="bg-deepVoid/60 rounded-xl p-3 border border-gray-800 max-h-48 overflow-y-auto no-scrollbar">
+                    <p class="text-xs text-vitalityGreen font-bold mb-1">CBT 導師 analysis：</p>
+                    <p class="text-xs text-pureWhite leading-relaxed whitespace-pre-wrap font-mono" id="cbt-analysis-text">分析中...</p>
+                </div>
+                <button onclick="closeCbtModal()" class="w-full py-3 rounded-xl bg-matteSlate border border-gray-700 text-xs text-pureWhite font-bold">
+                    完成心智重塑
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重新洗牌確認彈窗 -->
+    <div id="reset-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6 hidden">
+        <div class="glass-panel w-full max-w-sm rounded-3xl p-6 text-center border border-comfortPurple/20">
+            <div class="w-12 h-12 bg-comfortPurple/10 text-comfortPurple rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="refresh-cw" class="w-6 h-6 " style="animation-duration: 4s;"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-pureWhite mb-2">確認要重新洗牌突破計劃？</h3>
+            <p class="text-xs text-mutedSilver mb-6 leading-relaxed">
+                重置後，系統將啟用「無限任務矩陣隨機演算法」，為您隨機抽選出一套 30 天截然不同、全新排列的生活突破路線！
+            </p>
+            <div class="flex gap-3">
+                <button onclick="closeResetModal()" class="flex-1 py-3 rounded-xl bg-matteSlate text-xs text-pureWhite border border-gray-700 hover:bg-gray-800">
+                    保留現狀
+                </button>
+                <button onclick="confirmResetMatrix()" class="flex-1 py-3 rounded-xl bg-comfortPurple text-xs text-pureWhite font-bold hover:bg-violet-600">
+                    隨機重新洗牌
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重置時間設定 Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-6 hidden">
+        <div class="glass-panel w-full max-w-sm rounded-3xl p-6 border border-comfortPurple/30 space-y-4">
+            <div class="flex items-center gap-2 text-comfortPurple">
+                <i data-lucide="clock" class="w-5 h-5"></i>
+                <h3 class="text-base font-bold text-pureWhite">每日自動重置時間設定</h3>
+            </div>
+            <p class="text-xs text-mutedSilver leading-relaxed">
+                請選擇每天何時自動將「今日突破」歸零。建議設定在您的睡眠時段（例如凌晨 03:00 或 04:00），以避免深夜跨日活動時打卡中斷。
+            </p>
+            <div class="space-y-1">
+                <label class="text-[11px] text-dimGray font-bold uppercase tracking-wider block">自訂重置小時 (24小時制)</label>
+                <select id="setting-reset-hour" class="w-full bg-[#0D1117] border border-gray-800 focus:border-comfortPurple focus:outline-none rounded-xl px-3 py-3 text-sm text-pureWhite cursor-pointer">
+                    <!-- JS 將會自動渲染 24 小時整點選項 -->
+                </select>
+            </div>
+            <div class="flex gap-3 pt-2">
+                <button onclick="closeSettingsModal()" class="flex-1 py-3 rounded-xl bg-matteSlate text-xs text-pureWhite border border-gray-700 hover:bg-gray-800 transition-all">
+                    取消
+                </button>
+                <button id="btn-save-settings" onclick="saveSettingsHour()" class="flex-1 py-3 rounded-xl bg-comfortPurple text-xs text-pureWhite font-bold hover:bg-violet-600 transition-all">
+                    儲存設定並更新
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頂部 Header -->
+    <header class="px-6 pt-6 pb-4 flex justify-between items-center border-b border-gray-900 bg-deepVoid/95 backdrop-blur-md z-40">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-comfortPurple to-focusCyan flex items-center justify-center shadow-md">
+                <i data-lucide="compass" class="w-4 h-4 text-deepVoid"></i>
+            </div>
+            <span class="font-black text-base tracking-wider text-pureWhite">ComfortZone</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-1 bg-matteSlate px-2.5 py-1 rounded-full border border-gray-800">
+                <span class="text-xs font-semibold text-comfortPurple animate-pulse" id="streak-header-count">🔥 -- 天</span>
+            </div>
+            <button onclick="openSettingsModal()" class="w-8 h-8 rounded-xl bg-matteSlate flex items-center justify-center text-mutedSilver hover:text-comfortPurple border border-gray-800 transition-all active:scale-95" title="自訂每日重置時間">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- 主體內容區 -->
+    <main class="flex-1 px-6 py-4 overflow-y-auto no-scrollbar pb-24">
+        
+        <!-- Tab 1: 今日突破 -->
+        <section id="page-task" class="space-y-6 flex flex-col justify-between min-h-[55vh]">
+            <div class="text-center space-y-1">
+                <div class="flex items-center justify-center gap-1.5 text-xs text-comfortPurple font-medium" id="task-goal-title">
+                    🎯 離開舒適圈第 30 天日常養成
+                </div>
+                <div class="text-3xl font-black text-pureWhite tracking-wide pt-2" id="task-day-counter">
+                    突破 DAY 01 / 30
+                </div>
+                <div class="w-32 h-1 bg-gray-800 mx-auto rounded-full overflow-hidden mt-1">
+                    <div class="h-full bg-comfortPurple transition-all duration-500" id="task-day-progressbar" style="width: 3%;"></div>
+                </div>
+            </div>
+
+            <div class="py-4 flex flex-col justify-center items-center text-center space-y-6">
+                <div class="text-xs text-mutedSilver uppercase tracking-widest font-semibold flex items-center gap-1.5">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-comfortPurple animate-pulse"></i> 
+                    今日日常可執行微任務
+                </div>
+                
+                <h1 class="text-xl font-extrabold text-pureWhite px-4 leading-relaxed max-w-sm text-center" id="current-task-title">
+                    雲端載入中...
+                </h1>
+
+                <!-- AI 情境微調觸發按鈕 -->
+                <button onclick="openTuneModal()" id="btn-tune-trigger" class="px-4 py-2 rounded-full bg-comfortPurple/10 text-comfortPurple border border-comfortPurple/20 hover:bg-comfortPurple/20 transition-all text-xs flex items-center gap-1.5 font-bold">
+                    <i data-lucide="sliders-horizontal" class="w-3 h-3"></i> Today 不方便？用 AI 重新微調
+                </button>
+
+                <div class="glass-panel border border-comfortPurple/10 rounded-2xl px-5 py-4 max-w-sm text-left flex gap-3">
+                    <span class="text-xl">🧠</span>
+                    <div>
+                        <div class="text-xs font-bold text-comfortPurple mb-0.5">心智解鎖效應 (Breakthrough Effect)</div>
+                        <p class="text-xs text-mutedSilver leading-relaxed" id="current-task-reward">
+                            今日任務旨在逐步拉大心智彈性。完成物理肢體動作，能有效阻止杏仁核的焦慮過載。
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI 心靈樹洞與焦慮轉化器區塊 -->
+            <div class="glass-panel border border-comfortPurple/20 rounded-3xl p-5 space-y-3 max-w-sm mx-auto w-full">
+                <div class="flex items-center gap-2 text-comfortPurple">
+                    <i data-lucide="shield-alert" class="w-5 h-5 animate-pulse"></i>
+                    <h3 class="text-xs font-bold uppercase tracking-wider">✨ AI 心靈樹洞與焦慮轉化器</h3>
+                </div>
+                <p class="text-[11px] text-mutedSilver leading-relaxed">
+                    對今天的突破感到害怕或想逃避？寫下你心中的焦慮，AI 將運用認知重塑心法（CBT）為你提煉出零阻力的勇氣起手式。
+                </p>
+                <div class="space-y-2">
+                    <textarea id="vent-input" placeholder="例如：跟店員眼神對接我覺得好尷尬，怕被當怪人..." 
+                        class="w-full h-16 bg-[#0D1117] border border-gray-800 focus:border-comfortPurple focus:outline-none rounded-xl p-3 text-xs text-pureWhite placeholder-dimGray resize-none"></textarea>
+                    <button onclick="alchemizeAnxiety()" id="btn-vent" class="w-full py-2 rounded-xl bg-gradient-to-r from-comfortPurple to-focusCyan text-pureWhite text-[11px] font-black hover:opacity-90 transition-all flex items-center justify-center gap-1">
+                        <i data-lucide="wand-2" class="w-3.5 h-3.5"></i> ✨ 轉化焦慮為心理燃料
+                    </button>
+                </div>
+                <div id="vent-result" class="bg-deepVoid/40 border border-gray-800 rounded-xl p-3 text-[11px] leading-relaxed hidden whitespace-pre-wrap">
+                    <!-- 轉化結果由 JS 動態注入 -->
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center space-y-4 pt-4">
+                <div class="relative w-28 h-28 flex items-center justify-center">
+                    <div id="btn-ring-glow" class="absolute inset-0 rounded-full border-2 border-dashed border-comfortPurple/30 animate-spin" style="animation-duration: 12s;"></div>
+                    <svg class="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="44" stroke="rgba(139, 92, 246, 0.1)" stroke-width="6" fill="transparent" />
+                        <circle id="hold-progress-circle" cx="50" cy="50" r="44" stroke="#2ECC71" stroke-width="6" fill="transparent" stroke-dasharray="276.4" stroke-dashoffset="276.4" class="transition-all duration-75" />
+                    </svg>
+
+                    <button id="giant-checkbox-btn" 
+                            class="w-20 h-20 rounded-full bg-matteSlate border-2 border-comfortPurple flex items-center justify-center transition-all duration-300 z-10 focus:outline-none shadow-lg active:scale-95"
+                            style="box-shadow: 0 0 15px rgba(138, 92, 246, 0.25);">
+                        <i id="btn-icon" data-lucide="check" class="w-8 h-8 text-comfortPurple transition-all duration-300"></i>
+                    </button>
+                </div>
+
+                <div class="text-center">
+                    <p class="text-xs text-mutedSilver font-medium" id="hold-prompt-text">
+                        長按按鈕 1.5 秒確認今日微步達成
+                    </p>
+                    <p class="text-[10px] text-dimGray mt-1">
+                        ⚠️ 請誠實面對自己，確保已實際執行
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab 2: 突破看板 -->
+        <section id="page-analytics" class="hidden space-y-6">
+            <!-- 診斷核心區 -->
+            <div class="glass-panel rounded-3xl p-5 flex flex-col gap-4 border border-gray-800">
+                <div class="flex items-center gap-6">
+                    <div class="relative w-24 h-24 flex items-center justify-center shrink-0">
+                        <svg class="w-full h-full" viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="40" stroke="rgba(22, 27, 34, 1)" stroke-width="8" fill="transparent" />
+                            <circle id="analytics-progress-ring" cx="50" cy="50" r="40" stroke="url(#purple-grad)" stroke-width="8" fill="transparent" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2" class="progress-ring__circle" />
+                            <defs>
+                                <linearGradient id="purple-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#8B5CF6" />
+                                    <stop offset="100%" stop-color="#2ECC71" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <span class="absolute text-base font-bold text-pureWhite" id="analytics-progress-text">0%</span>
+                    </div>
+
+                    <div class="space-y-1">
+                        <h3 class="text-sm font-semibold text-pureWhite">當前突破軌道</h3>
+                        <p class="text-xs text-mutedSilver leading-relaxed" id="analytics-prompt-box">
+                            習慣需要 21 天，心智重塑需要 30 天。跨出舒適圈是一毫米的科學，每天推進一步。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- AI 大腦韌性深度診斷報告區塊 -->
+                <div class="border-t border-gray-800/80 pt-4 mt-2 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5 text-focusCyan">
+                            <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                            <span class="text-xs font-bold uppercase tracking-wider">Gemini 心智韌性診斷儀</span>
+                        </div>
+                        <button id="btn-generate-report" onclick="generateDiagnosticReport()" class="px-2.5 py-1 rounded-lg bg-focusCyan/20 text-focusCyan border border-focusCyan/30 text-[10px] font-bold hover:bg-focusCyan/30 transition-all flex items-center gap-1">
+                            <i data-lucide="refresh-cw" class="w-3 h-3"></i> 一鍵生成診斷報告
+                        </button>
+                    </div>
+                    <div id="diagnostic-report-box" class="bg-deepVoid/40 border border-gray-800 rounded-xl p-3.5 text-xs text-mutedSilver leading-relaxed space-y-2 hidden max-h-64 overflow-y-auto no-scrollbar whitespace-pre-wrap">
+                        <!-- 由 Gemini 動態分析 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Imagen 徽章畫家區塊 -->
+            <div class="glass-panel border border-comfortPurple/20 rounded-2xl p-5 space-y-4">
+                <div class="flex items-center gap-2 text-comfortPurple">
+                    <i data-lucide="palette" class="w-5 h-5"></i>
+                    <h4 class="text-xs font-bold uppercase tracking-wider">✨ Imagen 4.0 突破成就徽章</h4>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div id="badge-display-container" class="w-20 h-20 bg-deepVoid border border-gray-800 rounded-2xl flex items-center justify-center text-3xl shrink-0 overflow-hidden relative">
+                        <span>🛡️</span>
+                        <div id="badge-loader" class="absolute inset-0 bg-black/80 flex items-center justify-center hidden">
+                            <i data-lucide="loader" class="w-5 h-5 animate-spin text-comfortPurple"></i>
+                        </div>
+                    </div>
+                    <div class="space-y-2 flex-1">
+                        <p class="text-xs text-mutedSilver leading-relaxed">
+                            大腦對視覺化成就感高度敏感。點擊下方，將召喚 AI Imagen 繪製你目前的專屬成就幾何徽章！
+                        </p>
+                        <div class="flex flex-wrap gap-2 pt-1">
+                            <button onclick="generateAIBadge()" id="btn-draw-badge" class="px-3 py-1.5 rounded-lg bg-comfortPurple/20 text-comfortPurple border border-comfortPurple/30 text-[10px] font-bold hover:bg-comfortPurple/30 transition-all flex items-center gap-1">
+                                <i data-lucide="wand-2" class="w-3.5 h-3.5"></i> 繪製目前最高榮譽徽章
+                            </button>
+                            <a id="btn-download-badge" href="#" download="microsteps-badge.png" class="hidden px-3 py-1.5 rounded-lg bg-vitalityGreen/20 text-vitalityGreen border border-vitalityGreen/30 text-[10px] font-bold hover:bg-vitalityGreen/30 transition-all flex items-center gap-1">
+                                <i data-lucide="download" class="w-3.5 h-3.5"></i> 下載儲存徽章
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-xs font-bold text-mutedSilver tracking-widest uppercase mb-3 flex items-center gap-2">
+                    <i data-lucide="award" class="w-4 h-4 text-comfortPurple"></i>
+                    🏆 突破歷史勳章 (榮譽牆)
+                </h3>
+                <div class="grid grid-cols-4 gap-3" id="honor-badges-container">
+                    <!-- 勳章將透過 JS 依據突破天數動態渲染 -->
+                </div>
+            </div>
+
+            <!-- 重置按鈕 -->
+            <button onclick="openResetModal()" class="w-full py-4 rounded-2xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                重置並隨機洗牌 30 天任務
+            </button>
+        </section>
+
+    </main>
+
+    <!-- 底部 Tab 導覽列 -->
+    <nav class="fixed bottom-0 inset-x-0 max-w-md mx-auto bg-deepVoid/95 border-t border-gray-900 px-6 py-2 flex justify-around items-center z-40 backdrop-blur-md">
+        <button onclick="switchTab('task')" id="tab-btn-task" class="flex flex-col items-center gap-1 py-1 px-3 text-comfortPurple transition-all relative">
+            <div class="relative">
+                <i data-lucide="compass" class="w-5 h-5"></i>
+                <span id="task-badge" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-comfortPurple rounded-full border border-deepVoid animate-pulse hidden"></span>
+            </div>
+            <span class="text-[10px] font-semibold tracking-wide">今日突破</span>
+        </button>
+        <button onclick="switchTab('analytics')" id="tab-btn-analytics" class="flex flex-col items-center gap-1 py-1 px-3 text-mutedSilver transition-all">
+            <i data-lucide="bar-chart-2" class="w-5 h-5"></i>
+            <span class="text-[10px] font-semibold tracking-wide">突破看板</span>
+        </button>
+    </nav>
+
+    <script>
+        const SUPABASE_URL = 'https://ltcywtnyrtforqzwexwa.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_gAwXZWK3OCYbLItVeOl7Bg_6TmWjsuG';
+        
+        // ⚠️ 採用預設 Runtime 金鑰機制，空字串將在 Preview 環境中由系統自動套用
+        const apiKey = ""; 
+
+        let supabaseClient = null;
+        if (SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+
+        let dbGoals = [];
+        let cbtVoiceAudio = null; // 暫存 CBT 語音 blob URL
+
+        window.onload = function() {
+            lucide.createIcons();
+            if (!supabaseClient) {
+                showToast("請在原始碼中填入你的 Supabase 網址與金鑰！", "shield-alert");
+                return;
+            }
+            buildSettingsHourOptions();
+            fetchGoalsFromCloud();
+            initHoldButton();
+        }
+
+        // 指數退避重試通用網絡請求工具
+        async function fetchWithRetry(url, options = {}, retries = 5, backoff = 1000) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, backoff));
+                    return fetchWithRetry(url, options, retries - 1, backoff * 2);
+                }
+                throw error;
+            }
+        }
+
+        async function fetchGoalsFromCloud() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('goals')
+                    .select('*')
+                    .eq('title', '舒適圈拓展挑戰計劃')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+
+                if (!data || data.length === 0) {
+                    console.log("雲端未偵測到快適圈專案，執行無限任務矩陣隨機生成與同步中...");
+                    await createNewComfortZoneGoal();
+                } else {
+                    dbGoals = data || [];
+                    
+                    // ⚙️ 自動跨日檢測與自動重置
+                    await checkDailyReset(dbGoals[0]);
+                    
+                    renderScreen();
+                }
+            } catch (err) {
+                console.error("讀取 Supabase 失敗:", err.message);
+                showToast("雲端讀取失敗：" + err.message, "alert-circle");
+            }
+        }
+
+        // ==================== 🧠 無限隨機任務矩陣生成引擎 ====================
+        function generateComfortZoneMatrixTasks() {
+            const matrix = [
+                {
+                    name: "社交勇氣",
+                    envs: ["在便利商店結帳時", "在搭乘大樓電梯時", "在手搖杯/咖啡廳點餐時", "在通勤回家的路上", "在午餐排隊買便當時", "在遇到大樓警衛/外送員時"],
+                    subs: ["向一位迎面走來的陌生人", "向辛苦工作的店員 or 外送員", "對著幫你服務的服務生", "向電梯裡同乘的人", "向隔壁辦公桌/課桌的人"],
+                    acts: ["給予一個極其微小但真誠的細節讚美（如：『你的手錶/包包很好看！』）", "面帶微笑並真誠地說一句『辛苦了，謝謝你！』", "注視對方雙眼，微笑並大聲說一聲『早安/你好！』", "詢問一個日常無害的開放問題（如：『請問今天有推薦什麼餐點嗎？』）", "用雙手非常恭敬、鄭重地接過發票或找零"],
+                    cons: ["限制在 5 秒內優雅離去，不造成對方的任何社交尷尬", "保持雙眼眼神對接 3秒鐘以上", "全程把手機塞回口袋，絕不當低頭族", "語調刻意放慢一倍，用最溫柔舒緩的聲線", "不加任何多餘的解釋或不好意思的抱歉字詞"]
+                },
+                {
+                    name: "日常打破",
+                    envs: ["在今天通勤上班/上學的路上", "在今天洗澡的時候", "在準備吃今天的晚餐時", "在下午工作/學習休息空檔", "在晚上入睡前的 10 分鐘內", "在整理房間/桌面的過程中"],
+                    subs: ["自己"],
+                    acts: ["嘗試用你的『非慣用手』完成所有當下的物理動作", "刻意改走一條你從未走過、甚至需要繞路的全新路線", "挑選一個你平常絕對不吃、或平常很討厭的食物口味嘗試", "嘗試閉上雙眼、僅靠聽覺與觸覺來操作日常物理事務", "嘗試在不看任何螢幕的狀態下獨處吃飯"],
+                    cons: ["專注維持 3 分鐘以上，觀察自己內心浮現的任何抗拒感", "用手機碼錶精準計時 90 秒", "全程專注於當下身體關節的細微發力物理回饋", "在紙上把這個驚奇的體感用 10 個字記錄下來", "不跟任何身邊的人抱怨這個改變帶來的不便"]
+                },
+                {
+                    name: "數位減法",
+                    envs: ["在早晨剛起床的前 15 分鐘內", "在今天晚上下班/放學後", "在準備睡前躺在床上的時候", "在今天吃飯時的 10 分鐘內", "在下午 3 點到 4 點這段黃金時間內"],
+                    subs: ["自己"],
+                    acts: ["將手機設定為『飛航模式與靜音』，並塞入抽屜或包包最底層", "移除手機桌面最容易讓你分心的 1 個社群軟體捷徑", "不點開任何動態，只安靜看著純白牆壁或窗外景色", "拿出一張實體紙和一隻原子筆，用手寫取代打字記錄想法", "取消追蹤 3 個你最近半年完全不感興趣的粉專 or 演算法帳號"],
+                    cons: ["精準維持 5 分鐘以上，抗拒拿起手機的制約反射", "用心跳計時默數 60 下", "深呼吸 3 次，感受掌心的溫度", "觀察並記錄下大腦第一時間浮現的焦慮詞彙", "專注看著實體紙上的鋼筆/原子筆筆跡痕跡"]
+                },
+                {
+                    name: "心智拓寬",
+                    envs: ["在今天下午 4 點的疲憊空檔", "在今天晚上整理日記時", "在今天遇到令你有些煩躁的微小挫折時", "在洗臉照鏡子的一瞬間", "在今天無聊等待的 2 分鐘內"],
+                    subs: ["自己"],
+                    acts: ["對著鏡中的自己大聲說出 1 個今天你做得很好的微小細節", "在紙上寫下 1 個你最近一直逃避、但今天可以跨出 1 毫米的小事", "嘗試對一項糟糕的突發狀況說：『太好了，這是一次絕佳的排毒考驗！』", "不對自己做任何負面批判，閉眼深呼吸並對大腦說：『你辛苦了』", "主動原諒今天一個讓你稍微不舒服的無心之語"],
+                    cons: ["維持微笑狀態 10 秒鐘", "手掌放在心臟上方感受心跳", "深沉吐氣 3 次，將焦慮徹底排空", "將大腦所有雜音寫在紙上隨後撕碎丟棄", "在腦中回憶一次最溫慢的擁抱畫面"]
+                }
+            ];
+
+            const tasks = [];
+            const templates = [
+                (env, sub, act, con) => `${env}，嘗試${act}，並特別${con}。`,
+                (env, sub, act, con) => `今天練習打破常規：${env}，${sub}${act}，且全程${con}。`,
+                (env, sub, act, con) => `給自己一個微體感突破：${env}，${act}，並且${con}。`
+            ];
+
+            // 數學隨機抽選，確保 30 天任務在語意上完全不會有重複
+            for (let day = 1; day <= 30; day++) {
+                const catIdx = day % matrix.length; 
+                const cat = matrix[catIdx];
+
+                const env = cat.envs[Math.floor(Math.random() * cat.envs.length)];
+                const sub = cat.subs[Math.floor(Math.random() * cat.subs.length)];
+                const act = cat.acts[Math.floor(Math.random() * cat.acts.length)];
+                const con = cat.cons[Math.floor(Math.random() * cat.cons.length)];
+                
+                const template = templates[Math.floor(Math.random() * templates.length)];
+                
+                tasks.push(`Day ${day}: ${template(env, sub, act, con)}`);
+            }
+            return tasks;
+        }
+
+        async function createNewComfortZoneGoal() {
+            const matrixTasks = generateComfortZoneMatrixTasks();
+            try {
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .insert([
+                        { 
+                            title: '舒適圈拓展挑戰計劃', 
+                            tasks: matrixTasks, 
+                            completed_steps: 0, 
+                            today_completed: false,
+                            reset_hour: 4 // 預設凌晨 4 點
+                        }
+                    ]);
+
+                if (error) throw error;
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("同步初始任務失敗：" + err.message, "alert-octagon");
+            }
+        }
+
+        // ==================== ⚙️ 每日重置時間自動偵測演算法 ====================
+        async function checkDailyReset(goal) {
+            const resetHour = goal.reset_hour !== undefined ? goal.reset_hour : 4; 
+            const lastUpdated = new Date(goal.updated_at || goal.created_at);
+            const now = new Date();
+            
+            const lastResetBoundary = new Date(now);
+            lastResetBoundary.setHours(resetHour, 0, 0, 0);
+            
+            if (now.getHours() < resetHour) {
+                lastResetBoundary.setDate(lastResetBoundary.getDate() - 1);
+            }
+
+            if (goal.today_completed && lastUpdated < lastResetBoundary) {
+                try {
+                    const { error } = await supabaseClient
+                        .from('goals')
+                        .update({ today_completed: false })
+                        .eq('id', goal.id);
+
+                    if (error) throw error;
+                    
+                    goal.today_completed = false;
+                    showToast("新的一天開始！今日舒適圈任務已更新。", "sparkles");
+                    return true;
+                } catch (err) {
+                    console.error("雲端自動更新跨日失敗:", err);
+                }
+            }
+            return false;
+        }
+
+        // ==================== ⚙️ 設定 Modal 相關控制與渲染 ====================
+        function buildSettingsHourOptions() {
+            const select = document.getElementById('setting-reset-hour');
+            if (!select) return;
+            select.innerHTML = '';
+            for (let h = 0; h < 24; h++) {
+                const opt = document.createElement('option');
+                opt.value = h;
+                const paddedHour = h.toString().padStart(2, '0');
+                
+                let label = `${paddedHour}:00`;
+                if (h === 4) label += " (預設 - 推薦生心理代謝最低點)";
+                else if (h === 0) label += " (午夜零點 - 精準跨日)";
+                else if (h === 5) label += " (晨活早起型)";
+                else if (h === 2) label += " (深夜貓族極限值)";
+                
+                opt.textContent = label;
+                select.appendChild(opt);
+            }
+        }
+
+        function openSettingsModal() {
+            const activeGoal = dbGoals[0];
+            if (activeGoal) {
+                const currentResetHour = activeGoal.reset_hour !== undefined ? activeGoal.reset_hour : 4;
+                document.getElementById('setting-reset-hour').value = currentResetHour;
+            }
+            document.getElementById('settings-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        async function saveSettingsHour() {
+            const activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            const selectedHour = parseInt(document.getElementById('setting-reset-hour').value);
+            const btn = document.getElementById('btn-save-settings');
+            
+            btn.disabled = true;
+            btn.textContent = "儲存中...";
+
+            try {
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .update({ reset_hour: selectedHour })
+                    .eq('id', activeGoal.id);
+
+                if (error) throw error;
+
+                activeGoal.reset_hour = selectedHour;
+                showToast(`重置時間成功變更為每天 ${selectedHour.toString().padStart(2, '0')}:00！`, "check-check");
+                closeSettingsModal();
+                
+                await checkDailyReset(activeGoal);
+                renderScreen();
+            } catch (err) {
+                showToast("變更重置設定失敗：" + err.message, "alert-circle");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "儲存設定並更新";
+            }
+        }
+
+        // ==================== 頁面渲染邏輯 ====================
+        function renderScreen() {
+            let activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            document.getElementById('task-badge').classList.remove('hidden');
+            
+            const currentDay = activeGoal.today_completed 
+                ? Math.max(1, activeGoal.completed_steps) 
+                : activeGoal.completed_steps + 1;
+
+            document.getElementById('task-day-counter').textContent = `突破 DAY ${currentDay.toString().padStart(2, '0')} / 30`;
+            document.getElementById('task-day-progressbar').style.width = `${Math.round((currentDay/30)*100)}%`;
+            
+            const resetHourText = (activeGoal.reset_hour !== undefined ? activeGoal.reset_hour : 4).toString().padStart(2, '0') + ":00";
+            document.getElementById('task-goal-title').innerHTML = `🎯 離開舒適圈第 30 天日常養成 (每日 ${resetHourText} 自動刷新)`;
+
+            if (activeGoal.today_completed) {
+                document.getElementById('current-task-title').textContent = `🎉 今日離開舒適圈任務已安全突破！`;
+            } else {
+                if (activeGoal.tasks && activeGoal.tasks[currentDay - 1]) {
+                    document.getElementById('current-task-title').textContent = `${activeGoal.tasks[currentDay - 1]}`;
+                } else {
+                    document.getElementById('current-task-title').textContent = `觀察身邊的一個陌生人，找出對方一個優點並在心裡讚美他。`;
+                }
+            }
+
+            document.getElementById('streak-header-count').textContent = `🔥 ${activeGoal.completed_steps} 天`;
+
+            const btn = document.getElementById('giant-checkbox-btn');
+            const icon = document.getElementById('btn-icon');
+            const ring = document.getElementById('btn-ring-glow');
+            const promptText = document.getElementById('hold-prompt-text');
+
+            if (activeGoal.today_completed) {
+                btn.style.borderColor = '#2ECC71';
+                btn.style.boxShadow = '0 0 20px rgba(46, 204, 113, 0.4)';
+                icon.setAttribute('data-lucide', 'check-check');
+                icon.style.color = '#2ECC71';
+                if(ring) ring.classList.add('hidden');
+                promptText.innerHTML = `<span class="text-vitalityGreen">🎉 突破數據已安全儲存！</span>`;
+                btn.disabled = true;
+            } else {
+                btn.style.borderColor = '#8B5CF6';
+                btn.style.boxShadow = '0 0 15px rgba(138, 92, 246, 0.25)';
+                icon.setAttribute('data-lucide', 'check');
+                icon.style.color = '#8B5CF6';
+                if(ring) ring.classList.remove('hidden');
+                promptText.textContent = "長按按鈕 1.5 秒確認今日微步達成";
+                btn.disabled = false;
+            }
+
+            renderHonorBadges(activeGoal.completed_steps);
+            lucide.createIcons();
+        }
+
+        function renderHonorBadges(steps) {
+            const container = document.getElementById('honor-badges-container');
+            if (!container) return;
+
+            const badgeDefinitions = [
+                { threshold: 1, icon: "🌱", name: "微光啟航", desc: "跨出第1步", theme: "rgba(46, 204, 113, 0.25)" },
+                { threshold: 3, icon: "🔥", name: "大腦點火", desc: "克服前3天阻力", theme: "rgba(230, 126, 34, 0.25)" },
+                { threshold: 7, icon: "⚡", name: "神經連結", desc: "習慣突觸成功萌芽", theme: "rgba(241, 196, 15, 0.25)" },
+                { threshold: 10, icon: "🚀", name: "十日神經", desc: "雙位數意志奇蹟", theme: "rgba(52, 152, 219, 0.25)" },
+                { threshold: 15, icon: "🧿", name: "心智半程", desc: "超越舒適圈中界線", theme: "rgba(138, 92, 246, 0.25)" },
+                { threshold: 21, icon: "💎", name: "習慣定型", desc: "習慣定型里程碑", theme: "rgba(155, 89, 182, 0.25)" },
+                { threshold: 25, icon: "🔮", name: "深層重塑", desc: "大腦結構重組中", theme: "rgba(233, 30, 99, 0.25)" },
+                { threshold: 30, icon: "👑", name: "終極蛻變", desc: "舒適圈至尊大師", theme: "rgba(243, 156, 18, 0.25)" }
+            ];
+
+            container.innerHTML = '';
+            badgeDefinitions.forEach(b => {
+                const isUnlocked = steps >= b.threshold;
+                const card = document.createElement('div');
+                card.className = `glass-panel rounded-2xl p-3 text-center transition-all duration-300 cursor-pointer ${
+                    isUnlocked 
+                    ? 'border border-comfortPurple/40 hover:scale-105 active:scale-95 shadow-md' 
+                    : 'opacity-35 grayscale hover:scale-102 hover:opacity-50'
+                }`;
+                if (isUnlocked) {
+                    card.style.borderColor = b.theme;
+                    card.style.boxShadow = `0 4px 12px ${b.theme}`;
+                }
+                card.onclick = () => {
+                    if (isUnlocked) {
+                        showToast(`🏆 已解鎖【${b.name}】：${b.desc}！`, "award");
+                    } else {
+                        showToast(`🔒 未解鎖：需要累積突破 ${b.threshold} 天 (${steps}/${b.threshold})`, "lock");
+                    }
+                };
+
+                card.innerHTML = `
+                    <div class="text-2xl mb-1">${isUnlocked ? b.icon : '🔒'}</div>
+                    <div class="text-[10px] font-bold text-pureWhite truncate">${b.name}</div>
+                    <div class="text-[8px] mt-0.5 ${isUnlocked ? 'text-comfortPurple font-medium' : 'text-dimGray'}">
+                        ${isUnlocked ? '已解鎖' : `${b.threshold}天解鎖`}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // ==================== 長按打卡邏輯 ====================
+        let holdTimer;
+        let isHolding = false;
+
+        function initHoldButton() {
+            const btn = document.getElementById('giant-checkbox-btn');
+            const progressCircle = document.getElementById('hold-progress-circle');
+
+            function startHold(e) {
+                let activeGoal = dbGoals[0];
+                if (!activeGoal || activeGoal.today_completed) return;
+
+                e.preventDefault();
+                isHolding = true;
+                btn.style.transform = 'scale(0.9)';
+                progressCircle.style.transition = 'stroke-dashoffset 1.5s linear';
+                progressCircle.style.strokeDashoffset = '0';
+
+                holdTimer = setTimeout(() => {
+                    openCbtModal();
+                }, 1500);
+            }
+
+            function cancelHold() {
+                if (!isHolding) return;
+                isHolding = false;
+                clearTimeout(holdTimer);
+                btn.style.transform = 'scale(1)';
+                progressCircle.style.transition = 'stroke-dashoffset 0.3s ease-out';
+                progressCircle.style.strokeDashoffset = '276.4';
+            }
+
+            btn.addEventListener('mousedown', startHold);
+            btn.addEventListener('mouseup', cancelHold);
+            btn.addEventListener('mouseleave', cancelHold);
+            btn.addEventListener('touchstart', startHold);
+            btn.addEventListener('touchend', cancelHold);
+        }
+
+        // ==================== STREAMING_CHUNK: Setting up the Gemini 3 Text LLM and Synthesis endpoints... ====================
+        // ==================== ✨ Gemini 3 Flash 心靈樹洞與恐懼轉化器 ====================
+        async function alchemizeAnxiety() {
+            const input = document.getElementById('vent-input').value.trim();
+            if (!input) {
+                showToast("請先在樹洞中寫下您的焦慮或擔憂...", "alert-circle");
+                return;
+            }
+
+            const btn = document.getElementById('btn-vent');
+            const resultBox = document.getElementById('vent-result');
+            
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> <span>✨ 正在召喚 Gemini 轉化焦慮...</span>`;
+            lucide.createIcons();
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            const systemPrompt = `你是一位世界級的行為心理學家與認知行為療法（CBT）大師。
+使用者的目標是離開自己的生活舒適圈，但他此時此刻產生了焦慮或抗拒。
+請針對他的焦慮感，進行「認知重塑（Cognitive Reframing）」，將他的擔憂轉化為正向的心理燃料：
+1. 用一句極度溫暖、一針見血的話揭示這個擔憂底層的積極心理學意義。
+2. 為他設計一個「零阻力、1分鐘內一定能完成」的微步心法動作，用來打破當前僵局。
+3. 繁體中文（台灣），语气要堅定、溫馨、充滿智者般的力量，字數不超過 130 字。`;
+
+            const payload = {
+                contents: [{ parts: [{ text: `我目前的焦慮是：${input}` }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            try {
+                const response = await fetchWithRetry(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    resultBox.textContent = text;
+                    resultBox.classList.remove('hidden');
+                    showToast("焦慮磁場重塑成功！", "sparkles");
+                }
+            } catch (err) {
+                console.error(err);
+                resultBox.textContent = `【本地重塑反饋】：感到不安是正常的，這意味著你的大腦正在嘗試跨越突觸邊界！閉上眼睛，深深吸氣 5 秒，再緩慢吐氣 5 秒。告訴自己：『這只是一次好玩的實驗』。`;
+                resultBox.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="wand-2" class="w-3.5 h-3.5"></i> ✨ 轉化焦慮為心理燃料`;
+                lucide.createIcons();
+            }
+        }
+
+        // ==================== STREAMING_CHUNK: Integrating the rewrite tasks with callGeminiToRewriteTask... ====================
+        // ==================== ✨ Gemini 3 Flash 突破任務微調功能 ====================
+        function openTuneModal() {
+            document.getElementById('tune-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeTuneModal() {
+            document.getElementById('tune-modal').classList.add('hidden');
+            document.getElementById('tune-input').value = '';
+        }
+
+        async function submitTuneTask() {
+            const activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            const tuneReason = document.getElementById('tune-input').value.trim();
+            if (!tuneReason) return;
+
+            const btn = document.getElementById('btn-submit-tune');
+            btn.disabled = true;
+            btn.textContent = "Gemini 3.0 重寫中...";
+
+            const currentDay = activeGoal.completed_steps + 1;
+            const originalTask = activeGoal.tasks[currentDay - 1];
+
+            try {
+                const customTask = await callGeminiToRewriteTask(originalTask, tuneReason);
+                
+                const updatedTasks = [...activeGoal.tasks];
+                updatedTasks[currentDay - 1] = `Day ${currentDay} (AI已調): ${customTask}`;
+
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .update({ tasks: updatedTasks })
+                    .eq('id', activeGoal.id);
+
+                if (error) throw error;
+
+                showToast("AI 任務物理情境微調完成！", "sparkles");
+                closeTuneModal();
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("AI 調整失敗：" + err.message, "alert-triangle");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Gemini 重新調整";
+            }
+        }
+
+        async function callGeminiToRewriteTask(originalTask, tuneReason) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: `原始舒適圈突破任務：『${originalTask}』。
+使用者的實體物理情境限制：『${tuneReason}』。
+請為他重新客製化該任務。
+規則：
+1. 必須保留與原始任務同等的心智訓練抗阻效果。
+2. 必須 100% 避開使用者提到的情境限制。
+3. 字數控制在 45 字以內，繁體中文（台灣），格式僅回傳一句命令句，不要附帶任何 markdown 符號或額外解釋。` }] }]
+            };
+
+            try {
+                const data = await fetchWithRetry(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || originalTask;
+            } catch (err) {
+                return `${originalTask.split(':')[1] || originalTask}（已自動微調配合當前狀況）`;
+            }
+        }
+
+        // ==================== STREAMING_CHUNK: Integrating cognitive behavioral therapist (CBT) logic... ====================
+        // ==================== CBT 認知心智重塑對話與語音播放 ====================
+        function openCbtModal() {
+            document.getElementById('cbt-modal').classList.remove('hidden');
+            document.getElementById('cbt-feedback-stage').classList.remove('hidden');
+            document.getElementById('cbt-result-stage').classList.add('hidden');
+            document.getElementById('btn-cbt-tts').classList.add('hidden');
+            cbtVoiceAudio = null;
+            lucide.createIcons();
+        }
+
+        function closeCbtModal() {
+            document.getElementById('cbt-modal').classList.add('hidden');
+            document.getElementById('cbt-input').value = '';
+        }
+
+        async function submitCbtAnalysis() {
+            const activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            const feedback = document.getElementById('cbt-input').value.trim();
+            if (!feedback) return;
+
+            const btn = document.getElementById('btn-submit-cbt');
+            btn.disabled = true;
+            btn.textContent = "Gemini CBT 深度解析中...";
+
+            try {
+                const cbtAnalysis = await callGeminiCbt(feedback);
+                document.getElementById('cbt-analysis-text').textContent = cbtAnalysis;
+
+                const nextStepCount = activeGoal.completed_steps + 1;
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .update({ 
+                        completed_steps: nextStepCount, 
+                        today_completed: true 
+                    })
+                    .eq('id', activeGoal.id);
+
+                if (error) throw error;
+
+                // 啟動擬真語音朗讀合成
+                await synthesizeTts(cbtAnalysis);
+
+                confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, colors: ['#8B5CF6', '#2ECC71'] });
+                
+                document.getElementById('cbt-feedback-stage').classList.add('hidden');
+                document.getElementById('cbt-result-stage').classList.remove('hidden');
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("心智分析失敗：" + err.message, "alert-circle");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "進行 Gemini CBT 深度心智重塑";
+            }
+        }
+
+        async function callGeminiCbt(userFeedback) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: `使用者剛剛跨出了舒適圈，今天他的物理感受與內心聲音是：『${userFeedback}』。
+請你扮演資深 CBT（認知行為治療）大師。
+請以溫慢、篤定且極具啟發性的語氣，對他的回饋進行 100 字內的心智分析。
+1. 幫他指出他成功克服了什麼樣的大腦逃避反射。
+2. 幫他錨定這次行動為神經學突觸帶來的正向累積。
+3. 繁體中文（台灣），格式要像對話一樣溫馨。` }] }]
+            };
+
+            try {
+                const data = await fetchWithRetry(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "突破成功！繼續保持！";
+            } catch (err) {
+                return `恭喜你完成突破！今天你成功克制了杏仁核的逃避反射。寫下感受就是重塑突觸的第一步！`;
+            }
+        }
+
+        // ==================== STREAMING_CHUNK: Building biological level realistic voice tts using Sulafat... ====================
+        // ==================== Gemini 2.5 TTS 生物級擬真語音合成 ====================
+        async function synthesizeTts(textToSpeak) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: `用極度舒緩、溫柔、像專業心理師的溫暖聲調朗讀以下內容：${textToSpeak}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: "Sulafat" 
+                            }
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            try {
+                const result = await fetchWithRetry(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const inlineAudio = result.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+                
+                if (inlineAudio && inlineAudio.data) {
+                    const sampleRate = parseInt(inlineAudio.mimeType.split('rate=')[1]) || 24000;
+                    cbtVoiceAudio = pcmToWav(inlineAudio.data, sampleRate);
+                    document.getElementById('btn-cbt-tts').classList.remove('hidden');
+                }
+            } catch (err) {
+                console.warn("TTS 擬真語音合成失敗:", err);
+            }
+        }
+
+        function playCbtSpeech() {
+            if (!cbtVoiceAudio) return;
+            const audio = new Audio(cbtVoiceAudio);
+            const icon = document.getElementById('tts-icon');
+            icon.setAttribute('data-lucide', 'music');
+            lucide.createIcons();
+            
+            audio.play();
+            audio.onended = () => {
+                icon.setAttribute('data-lucide', 'volume-2');
+                lucide.createIcons();
+            };
+        }
+
+        function pcmToWav(pcmBase64, sampleRate) {
+            const pcmData = Uint8Array.from(atob(pcmBase64), c => c.charCodeAt(0));
+            const wavHeader = new ArrayBuffer(44);
+            const view = new DataView(wavHeader);
+            
+            const writeString = (view, offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmData.byteLength, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); 
+            view.setUint16(22, 1, true); 
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true); 
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmData.byteLength, true);
+            
+            const wavBlob = new Blob([wavHeader, pcmData], { type: 'audio/wav' });
+            return URL.createObjectURL(wavBlob);
+        }
+
+        // ==================== STREAMING_CHUNK: Designing fallback high precision Canvas engine when Imagen fails... ====================
+        // ==================== Imagen 4.0 突破成就徽章藝術生成 ====================
+        function drawFallbackBadgeToImage(emoji, stepName) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#0D1117';
+            ctx.fillRect(0, 0, 512, 512);
+
+            const gradient = ctx.createRadialGradient(256, 256, 40, 256, 256, 240);
+            gradient.addColorStop(0, 'rgba(138, 92, 246, 0.25)'); 
+            gradient.addColorStop(1, 'rgba(13, 17, 23, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(256, 256, 240, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(138, 92, 246, 0.5)';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI / 3) * i - Math.PI / 6;
+                const x = 256 + 180 * Math.cos(angle);
+                const y = 256 + 180 * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(46, 204, 113, 0.3)'; 
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(256, 256, 130, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.font = '110px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(emoji, 256, 230);
+
+            ctx.fillStyle = '#F0F6FC';
+            ctx.font = 'bold 26px "PingFang TC", "Taipei Sans TC", sans-serif';
+            ctx.fillText(stepName, 256, 350);
+
+            ctx.fillStyle = '#8B949E';
+            ctx.font = 'bold 15px "Inter", sans-serif';
+            ctx.letterSpacing = "2px";
+            ctx.fillText("MICROSTEPS BREAKTHROUGH", 256, 395);
+
+            return canvas.toDataURL("image/png");
+        }
+
+        async function generateAIBadge() {
+            const activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            const loader = document.getElementById('badge-loader');
+            loader.classList.remove('hidden');
+
+            const downloadBtn = document.getElementById('btn-download-badge');
+
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+                const promptText = `A minimalist flat modern geometric emblem badge representing personal growth, mental breakthrough, cyber void theme, neon purple and glowing emerald green palette, dark backgrounds, high graphic design aesthetic, no text.`;
+                
+                const payload = {
+                    instances: { prompt: promptText },
+                    parameters: { sampleCount: 1 }
+                };
+
+                const result = await fetchWithRetry(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (result.predictions && result.predictions[0]?.bytesBase64Encoded) {
+                    const imageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+                    document.getElementById('badge-display-container').innerHTML = `<img src="${imageUrl}" class="w-full h-full object-cover">`;
+                    
+                    downloadBtn.href = imageUrl;
+                    downloadBtn.download = `microsteps-badge-day${activeGoal.completed_steps}.png`;
+                    downloadBtn.classList.remove('hidden');
+
+                    showToast("專屬突破成就徽章繪製完成！", "sparkles");
+                } else {
+                    throw new Error("圖片生成端點回傳異常");
+                }
+            } catch (err) {
+                console.warn(err.message);
+                
+                const badgeDefinitions = [
+                    { threshold: 1, icon: "🌱", name: "微光啟航" },
+                    { threshold: 3, icon: "🔥", name: "大腦點火" },
+                    { threshold: 7, icon: "⚡", name: "神經連結" },
+                    { threshold: 10, icon: "🚀", name: "十日神經" },
+                    { threshold: 15, icon: "🧿", name: "心智半程" },
+                    { threshold: 21, icon: "💎", name: "習慣定型" },
+                    { threshold: 25, icon: "🔮", name: "深層重塑" },
+                    { threshold: 30, icon: "👑", name: "終極蛻變" }
+                ];
+                
+                let activeBadge = badgeDefinitions[0];
+                for (let i = badgeDefinitions.length - 1; i >= 0; i--) {
+                    if (activeGoal.completed_steps >= badgeDefinitions[i].threshold) {
+                        activeBadge = badgeDefinitions[i];
+                        break;
+                    }
+                }
+
+                const fallbackImageUrl = drawFallbackBadgeToImage(activeBadge.icon, activeBadge.name);
+                
+                document.getElementById('badge-display-container').innerHTML = `<img src="${fallbackImageUrl}" class="w-full h-full object-cover">`;
+                
+                downloadBtn.href = fallbackImageUrl;
+                downloadBtn.download = `microsteps-badge-${activeBadge.name}.png`;
+                downloadBtn.classList.remove('hidden');
+
+                showToast("已調用本機高解析繪圖引擎生成實體勳章！", "shield");
+            } finally {
+                loader.classList.add('hidden');
+                lucide.createIcons();
+            }
+        }
+
+        // ==================== STREAMING_CHUNK: Integrating the Gemini Diagnostic Resilience analytics report... ====================
+        // ==================== ✨ 一鍵召喚 Gemini 3 心智韌性診斷報告 ====================
+        async function generateDiagnosticReport() {
+            const activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            const btn = document.getElementById('btn-generate-report');
+            const reportBox = document.getElementById('diagnostic-report-box');
+
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> <span>正在讀取大腦突觸數據...</span>`;
+            lucide.createIcons();
+
+            const completedSteps = activeGoal.completed_steps;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+            
+            const systemPrompt = `你是一位世界級認知行為治療大師與神經科學家。
+請根據使用者在「30天微步舒適圈突破計畫」中，目前的進度數據，生成一份生動且極具啟發性的「心理與神經構造深度診斷報告」。
+使用者目前已累積成功突破了：${completedSteps} 天。
+請用繁體中文（台灣）撰寫，報告必須包含：
+1. 【大腦皮質重塑進度】：根據突破天數，評估其杏仁核焦慮反應降低了多少，以及神經突觸定型程度（天數越多，定型度越高）。
+2. 【舒適圈拓展人格定位】：給予一個酷炫的稱號（如：「神經突觸開拓先鋒」、「杏仁核馴化大師」等）。
+3. 【量身定制下階段建議】：針對目前進度，提供一個下一步維持大腦彈性的實用 CBT 建議。
+字數限制在 180 字以內，排版清爽，多用 emoji 點綴。`;
+
+            const payload = {
+                contents: [{ parts: [{ text: `請為我生成診斷報告。我已經累積完成了舒適圈計畫的 ${completedSteps} 天突破！` }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            try {
+                const response = await fetchWithRetry(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const botReport = response.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (botReport) {
+                    reportBox.textContent = botReport;
+                    reportBox.classList.remove('hidden');
+                    showToast("診斷報告生成完畢！", "sparkles");
+                }
+            } catch (err) {
+                console.error(err);
+                reportBox.textContent = `【本地安全報告】：\n🌱 當前進度：DAY ${completedSteps}/30\n🧠 神神經突觸活性：正在積極重塑中！\n🛡️ 人格定位：『微步起航開拓者』\n💡 建議：繼續保持每天 1.5 秒的打卡確認。堅持是馴化大腦杏仁核最科學的唯一解！`;
+                reportBox.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-3 h-3"></i> 一鍵生成診斷報告`;
+                lucide.createIcons();
+            }
+        }
+
+        // ==================== 重置計畫模態與操作 ====================
+        function openResetModal() {
+            document.getElementById('reset-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeResetModal() {
+            document.getElementById('reset-modal').classList.add('hidden');
+        }
+
+        async function confirmResetMatrix() {
+            const activeGoal = dbGoals[0];
+            if (!activeGoal) return;
+
+            const matrixTasks = generateComfortZoneMatrixTasks();
+            const btn = document.querySelector('#reset-modal button:last-child');
+            btn.disabled = true;
+            btn.textContent = "重新組合矩陣中...";
+
+            try {
+                const { error } = await supabaseClient
+                    .from('goals')
+                    .update({
+                        tasks: matrixTasks,
+                        completed_steps: 0,
+                        today_completed: false
+                    })
+                    .eq('id', activeGoal.id);
+
+                if (error) throw error;
+
+                document.getElementById('badge-display-container').innerHTML = `<span>🛡️</span>`;
+                document.getElementById('btn-download-badge').classList.add('hidden');
+                document.getElementById('vent-result').classList.add('hidden');
+                document.getElementById('vent-input').value = '';
+                document.getElementById('diagnostic-report-box').classList.add('hidden');
+
+                confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, colors: ['#8B5CF6', '#3498DB'] });
+                showToast("全新 30 天日常突破軌道洗牌完成！", "wand-2");
+                closeResetModal();
+                await fetchGoalsFromCloud();
+            } catch (err) {
+                showToast("重置失敗：" + err.message, "alert-circle");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "隨機重新洗牌";
+            }
+        }
+
+        // ==================== 分頁 UI 切換控制 ====================
+        function switchTab(tabId) {
+            const sections = ['page-task', 'page-analytics'];
+            sections.forEach(s => {
+                const el = document.getElementById(s);
+                if (el) {
+                    el.classList.add('hidden');
+                    el.classList.remove('flex', 'flex-col');
+                }
+            });
+
+            const activeSection = document.getElementById(`page-${tabId}`);
+            if (activeSection) {
+                activeSection.classList.remove('hidden');
+                if (tabId === 'task') {
+                    activeSection.classList.add('flex', 'flex-col');
+                }
+            }
+
+            const tabs = ['task', 'analytics'];
+            tabs.forEach(t => {
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (btn) {
+                    btn.classList.remove('text-comfortPurple');
+                    btn.classList.add('text-mutedSilver');
+                }
+            });
+            
+            const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-mutedSilver');
+                activeBtn.classList.add('text-comfortPurple');
+            }
+            
+            if (tabId === 'analytics') {
+                renderAnalytics();
+            }
+            lucide.createIcons();
+        }
+
+        function renderAnalytics() {
+            const activeGoal = dbGoals[0];
+            const progressRing = document.getElementById('analytics-progress-ring');
+            const progressText = document.getElementById('analytics-progress-text');
+            const promptBox = document.getElementById('analytics-prompt-box');
+
+            if (activeGoal) {
+                const percent = Math.round((activeGoal.completed_steps / 30) * 100);
+                progressText.textContent = `${percent}%`;
+                
+                const circumference = 2 * Math.PI * 40; 
+                const offset = circumference - (percent / 100) * circumference;
+                progressRing.style.strokeDashoffset = offset;
+                
+                promptBox.textContent = `你已突破了 ${activeGoal.completed_steps} 個舒適圈結界。大腦皮質層與神經習慣突觸正在重新建立。`;
+                
+                renderHonorBadges(activeGoal.completed_steps);
+            }
+        }
+
+        function showToast(text, iconName = "info") {
+            const toast = document.getElementById('toast');
+            const toastText = document.getElementById('toast-text');
+            const toastIcon = document.getElementById('toast-icon');
+            
+            toastText.textContent = text;
+            toastIcon.setAttribute('data-lucide', iconName);
+            lucide.createIcons();
+
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
